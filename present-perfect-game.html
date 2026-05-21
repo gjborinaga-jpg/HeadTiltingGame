@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Present Perfect Head Tilt Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="m-0 p-0">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function HeadTiltPresentPerfectGame() {
+            const questions = [
+                {
+                    question: "I ____ my homework.",
+                    left: "have finished",
+                    right: "has finished",
+                    answer: "left",
+                },
+                {
+                    question: "She ____ to school today.",
+                    left: "have gone",
+                    right: "has gone",
+                    answer: "right",
+                },
+                {
+                    question: "They ____ lunch already.",
+                    left: "have eaten",
+                    right: "has eaten",
+                    answer: "left",
+                },
+                {
+                    question: "He ____ his bag.",
+                    left: "have lost",
+                    right: "has lost",
+                    answer: "right",
+                },
+                {
+                    question: "We ____ the movie.",
+                    left: "have watched",
+                    right: "has watched",
+                    answer: "left",
+                },
+                {
+                    question: "Aya ____ her room.",
+                    left: "have cleaned",
+                    right: "has cleaned",
+                    answer: "right",
+                },
+                {
+                    question: "I ____ sushi before.",
+                    left: "have tried",
+                    right: "has tried",
+                    answer: "left",
+                },
+                {
+                    question: "Tom ____ a new bike.",
+                    left: "have bought",
+                    right: "has bought",
+                    answer: "right",
+                },
+                {
+                    question: "The students ____ the test.",
+                    left: "have finished",
+                    right: "has finished",
+                    answer: "left",
+                },
+                {
+                    question: "My mother ____ dinner.",
+                    left: "have cooked",
+                    right: "has cooked",
+                    answer: "right",
+                },
+                {
+                    question: "You ____ a good job.",
+                    left: "have done",
+                    right: "has done",
+                    answer: "left",
+                },
+                {
+                    question: "Ken ____ his teacher.",
+                    left: "have helped",
+                    right: "has helped",
+                    answer: "right",
+                },
+                {
+                    question: "We ____ to Tokyo.",
+                    left: "have traveled",
+                    right: "has traveled",
+                    answer: "left",
+                },
+                {
+                    question: "Mika ____ her book.",
+                    left: "have opened",
+                    right: "has opened",
+                    answer: "right",
+                },
+                {
+                    question: "I ____ my friend today.",
+                    left: "have called",
+                    right: "has called",
+                    answer: "left",
+                },
+            ];
+
+            const [currentQuestion, setCurrentQuestion] = useState(0);
+            const [score, setScore] = useState(0);
+            const [message, setMessage] = useState("Tilt your head LEFT or RIGHT to answer!");
+            const [gameOver, setGameOver] = useState(false);
+            const [permissionDenied, setPermissionDenied] = useState(false);
+
+            useEffect(() => {
+                let lastAnswerTime = 0;
+
+                const handleOrientation = (event) => {
+                    const gamma = event.gamma;
+                    const now = Date.now();
+
+                    if (now - lastAnswerTime < 1500 || gameOver) return;
+
+                    if (gamma < -15) {
+                        checkAnswer("left");
+                        lastAnswerTime = now;
+                    } else if (gamma > 15) {
+                        checkAnswer("right");
+                        lastAnswerTime = now;
+                    }
+                };
+
+                // Request permission for iOS 13+
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(permissionState => {
+                            if (permissionState === 'granted') {
+                                window.addEventListener("deviceorientation", handleOrientation);
+                            } else {
+                                setPermissionDenied(true);
+                            }
+                        })
+                        .catch(() => setPermissionDenied(true));
+                } else {
+                    // Non-iOS devices
+                    window.addEventListener("deviceorientation", handleOrientation);
+                }
+
+                return () => {
+                    window.removeEventListener("deviceorientation", handleOrientation);
+                };
+            }, [currentQuestion, gameOver]);
+
+            const checkAnswer = (choice) => {
+                const correct = questions[currentQuestion].answer;
+
+                if (choice === correct) {
+                    setScore((prev) => prev + 1);
+                    setMessage("Correct! 🎉");
+                } else {
+                    setMessage("Oops! Try the next one! 😄");
+                }
+
+                setTimeout(() => {
+                    if (currentQuestion + 1 < questions.length) {
+                        setCurrentQuestion((prev) => prev + 1);
+                        setMessage("Tilt your head LEFT or RIGHT to answer!");
+                    } else {
+                        setGameOver(true);
+                    }
+                }, 1200);
+            };
+
+            const restartGame = () => {
+                setCurrentQuestion(0);
+                setScore(0);
+                setGameOver(false);
+                setMessage("Tilt your head LEFT or RIGHT to answer!");
+            };
+
+            const handleManualAnswer = (choice) => {
+                checkAnswer(choice);
+            };
+
+            if (gameOver) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-b from-blue-100 to-purple-200 flex items-center justify-center p-6">
+                        <div className="bg-white rounded-3xl shadow-2xl p-10 text-center max-w-xl w-full">
+                            <h1 className="text-5xl font-bold mb-6">Game Over 🎮</h1>
+                            <p className="text-3xl mb-4">Your Score:</p>
+                            <p className="text-6xl font-bold text-blue-600 mb-8">
+                                {score} / {questions.length}
+                            </p>
+
+                            <button
+                                onClick={restartGame}
+                                className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-2xl text-2xl font-bold transition"
+                            >
+                                Play Again
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            const q = questions[currentQuestion];
+
+            return (
+                <div className="min-h-screen bg-gradient-to-b from-yellow-100 to-pink-200 flex flex-col items-center justify-center p-6">
+                    <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-4xl w-full text-center">
+                        <h1 className="text-5xl font-bold mb-4">
+                            Present Perfect Head Tilt Game 🎯
+                        </h1>
+
+                        <p className="text-2xl mb-4 text-gray-700">
+                            Question {currentQuestion + 1} of {questions.length}
+                        </p>
+
+                        <div className="bg-blue-100 rounded-2xl p-6 mb-8">
+                            <p className="text-4xl font-bold">{q.question}</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                            <button
+                                onClick={() => handleManualAnswer("left")}
+                                className="bg-green-200 hover:bg-green-300 rounded-2xl p-8 shadow-lg transition transform hover:scale-105 active:scale-95"
+                            >
+                                <p className="text-2xl mb-2 font-bold">⬅ LEFT</p>
+                                <p className="text-4xl font-bold">{q.left}</p>
+                            </button>
+
+                            <button
+                                onClick={() => handleManualAnswer("right")}
+                                className="bg-orange-200 hover:bg-orange-300 rounded-2xl p-8 shadow-lg transition transform hover:scale-105 active:scale-95"
+                            >
+                                <p className="text-2xl mb-2 font-bold">RIGHT ➡</p>
+                                <p className="text-4xl font-bold">{q.right}</p>
+                            </button>
+                        </div>
+
+                        <p className="text-3xl font-bold mb-4">{message}</p>
+
+                        <div className="text-2xl font-semibold text-purple-700">
+                            Score: {score}
+                        </div>
+
+                        {permissionDenied && (
+                            <div className="mt-6 p-4 bg-yellow-100 border-2 border-yellow-400 rounded-lg text-lg text-yellow-800">
+                                ⚠️ Motion sensor permission denied. Use the buttons above to play!
+                            </div>
+                        )}
+
+                        <div className="mt-8 text-gray-600 text-lg">
+                            📱 Tilt your device LEFT or RIGHT to answer, or use the buttons!
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<HeadTiltPresentPerfectGame />);
+    </script>
+</body>
+</html>
