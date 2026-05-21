@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HeadTilt Academy AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; }
+        .video-container { position: relative; width: 100%; max-width: 480px; margin: 0 auto; }
+        canvas { position: absolute; top: 0; left: 0; transform: scaleX(-1); pointer-events: none; }
+        video { transform: scaleX(-1); border-radius: 1.5rem; background: #1e293b; }
+        .tilt-meter { transition: width 0.1s ease; }
+        .confirm-progress { transition: width 0.1s linear; }
+        
+        .image-shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* AI Feedback Popover */
+        #ai-feedback-toast {
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform: translateY(150%);
+        }
+        #ai-feedback-toast.show {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- START SCREEN -->
+    <div id="start-screen" class="max-w-xl w-full bg-white p-10 rounded-[2.5rem] shadow-2xl text-center space-y-8 border-b-8 border-blue-500">
+        <div class="inline-flex items-center justify-center w-24 h-24 bg-blue-50 rounded-full text-5xl">🤖</div>
+        <div class="space-y-2">
+            <h1 class="text-5xl font-extrabold text-slate-800 tracking-tight">HeadTilt Academy <span class="text-blue-600">AI</span></h1>
+            <p class="text-slate-500 text-lg">Master Grammar with Movement & AI.</p>
+        </div>
+        <div class="p-6 bg-slate-50 rounded-3xl text-left space-y-4">
+            <div class="flex items-center gap-3">
+                <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold uppercase">New</span>
+                <p class="text-slate-600 text-sm italic">AI now generates questions and explains your mistakes!</p>
+            </div>
+            <div class="flex items-start gap-4">
+                <div class="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shrink-0">1</div>
+                <p class="text-slate-600">Tilt your head <span class="font-bold text-blue-600">Left</span> or <span class="font-bold text-indigo-600">Right</span>.</p>
+            </div>
+            <div class="flex items-start gap-4">
+                <div class="bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shrink-0">2</div>
+                <p class="text-slate-600">Hold the position to confirm!</p>
+            </div>
+        </div>
+        <button id="btn-start" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-5 px-8 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-95 shadow-xl text-xl">
+            Generate My Lesson
+        </button>
+        <div id="loading-status" class="hidden text-xs text-slate-400 font-bold animate-pulse tracking-widest uppercase">INITIALIZING AI CURRICULUM...</div>
+    </div>
+
+    <!-- GAMEPLAY AREA -->
+    <div id="game-container" class="hidden w-full max-w-7xl flex flex-col gap-6 items-center">
+        <div id="question-header" class="w-full bg-white p-8 rounded-[2.5rem] shadow-xl border-b-8 border-blue-500 relative overflow-hidden">
+            <div class="flex justify-between items-center mb-6">
+                <span id="question-count" class="bg-slate-100 px-4 py-1.5 rounded-full text-xs font-black text-slate-500 tracking-widest uppercase">Question 1 / 10</span>
+                <div class="flex gap-4">
+                    <button id="btn-replay-audio" class="bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors" title="Replay Audio">
+                        🔊
+                    </button>
+                    <span id="score-display" class="bg-blue-50 px-4 py-1.5 rounded-full text-xs font-black text-blue-600 tracking-widest uppercase">Score: 0</span>
+                </div>
+            </div>
+            
+            <div class="flex flex-col md:flex-row items-center gap-10">
+                <div class="w-full md:w-1/3 aspect-square bg-slate-100 rounded-3xl overflow-hidden border-4 border-slate-50 shadow-inner flex items-center justify-center">
+                    <img id="question-image" class="w-full h-full object-cover hidden" alt="Question visual">
+                    <div id="image-loader" class="w-full h-full image-shimmer flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+                        <div class="text-3xl mb-2">🎨</div>
+                        <p class="text-[10px] font-bold uppercase tracking-widest">Generating Scene...</p>
+                    </div>
+                </div>
+                <div class="flex-1 text-center md:text-left">
+                    <h2 id="question-text" class="text-3xl md:text-5xl font-black text-slate-800 leading-tight">Thinking...</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch w-full">
+            <div id="option-left" class="group flex flex-col justify-center p-10 rounded-[2.5rem] border-4 border-slate-100 text-center transition-all bg-white shadow-lg relative">
+                <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">Tilt Left ⬅️</div>
+                <div id="text-left" class="text-4xl font-black text-blue-600">Option A</div>
+            </div>
+
+            <div class="flex flex-col gap-4">
+                <div class="video-container shadow-2xl rounded-[2.5rem] overflow-hidden aspect-video flex items-center justify-center border-4 border-white bg-slate-200">
+                    <video id="video" class="w-full h-full object-cover" autoplay playsinline></video>
+                    <canvas id="canvas"></canvas>
+                </div>
+                <div class="bg-white p-6 rounded-[2rem] shadow-xl border border-slate-100">
+                    <div class="w-full bg-slate-100 h-4 rounded-full overflow-hidden relative">
+                        <div id="tilt-bar" class="tilt-meter absolute left-1/2 h-full w-0 bg-blue-500 origin-left"></div>
+                    </div>
+                    <div class="mt-4">
+                        <div id="confirm-progress-bar" class="confirm-progress h-2 w-0 bg-green-500 rounded-full"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="option-right" class="group flex flex-col justify-center p-10 rounded-[2.5rem] border-4 border-slate-100 text-center transition-all bg-white shadow-lg relative">
+                <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">➡️ Tilt Right</div>
+                <div id="text-right" class="text-4xl font-black text-indigo-600">Option B</div>
+            </div>
+        </div>
+        <div id="feedback-area" class="h-16 text-center text-4xl font-black uppercase italic tracking-tighter"></div>
+    </div>
+
+    <!-- AI EXPLANATION TOAST -->
+    <div id="ai-feedback-toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-lg bg-slate-900 text-white p-6 rounded-3xl shadow-2xl flex flex-col gap-3 z-50 pointer-events-none">
+        <div class="flex items-center gap-2">
+            <span class="text-xl">💡</span>
+            <h4 class="font-bold text-blue-400">AI Explanation</h4>
+        </div>
+        <p id="ai-feedback-text" class="text-sm text-slate-300 leading-relaxed"></p>
+    </div>
+
+    <!-- RESULTS SCREEN -->
+    <div id="results-screen" class="hidden max-w-xl w-full bg-white p-16 rounded-[3rem] shadow-2xl text-center space-y-8 border-b-8 border-green-500">
+        <div class="text-7xl">🏆</div>
+        <h2 class="text-4xl font-black text-slate-800">Journey Complete!</h2>
+        <div class="text-7xl font-black text-blue-600 py-4" id="final-score">0 / 0</div>
+        <button onclick="location.reload()" class="w-full bg-slate-900 hover:bg-black text-white font-bold py-5 px-8 rounded-2xl transition-all shadow-xl text-xl">Restart Session</button>
+    </div>
+
+    <script type="module">
+        import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
+        let faceLandmarker;
+        let video = document.getElementById('video');
+        let canvasElement = document.getElementById('canvas');
+        let canvasCtx = canvasElement.getContext('2d');
+        let lastVideoTime = -1;
+
+        let questions = [];
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let gameState = 'START';
+        let currentTilt = 0;
+        let currentDecision = null;
+        let currentHoldStartTime = null;
+        const tiltThreshold = 15;
+        const holdTimeThreshold = 1000;
+
+        const synth = new Tone.PolySynth().toDestination();
+        const apiKey = ""; 
+
+        // --- AI API HELPERS ---
+
+        async function fetchWithRetry(url, options, retries = 3, backoff = 1000) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                return await response.json();
+            } catch (err) {
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, backoff));
+                    return fetchWithRetry(url, options, retries - 1, backoff * 2);
+                }
+                throw err;
+            }
+        }
+
+        async function generateCurriculum() {
+            const systemPrompt = "Act as an expert English teacher. Generate 10 Present Perfect tense grammar questions for students in Japan. Format the response as a JSON array of objects. Each object must have: 'q' (the question text), 'a' (option text), 'b' (option text), 'correct' (either 'a' or 'b'), and 'prompt' (a detailed physical scene description for image generation). Use friendly and clear language.";
+            const userQuery = "Generate 10 challenging Present Perfect questions. Include some based in Hokkaido and some general grammar checks.";
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                q: { type: "STRING" },
+                                a: { type: "STRING" },
+                                b: { type: "STRING" },
+                                correct: { type: "STRING" },
+                                prompt: { type: "STRING" }
+                            },
+                            required: ["q", "a", "b", "correct", "prompt"]
+                        }
+                    }
+                },
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            const data = await fetchWithRetry(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            return JSON.parse(data.candidates[0].content.parts[0].text);
+        }
+
+        async function getAIExplanation(question, userChoice, correctChoice) {
+            const prompt = `A student answered "${userChoice}" for the question "${question}". The correct answer is "${correctChoice}". Explain briefly and kindly why the correct answer is right and why "${userChoice}" was wrong in the context of Present Perfect tense. Keep it under 2 sentences.`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            
+            const data = await fetchWithRetry(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        async function speakQuestion(text) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: `Read this grammar question clearly: ${text}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+                }
+            };
+
+            const result = await fetchWithRetry(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const audioData = result.candidates[0].content.parts[0].inlineData.data;
+            const mimeType = result.candidates[0].content.parts[0].inlineData.mimeType;
+            const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+            
+            const pcmData = base64ToArrayBuffer(audioData);
+            const pcm16 = new Int16Array(pcmData);
+            const wavBlob = pcmToWav(pcm16, sampleRate);
+            const audioUrl = URL.createObjectURL(wavBlob);
+            const audio = new Audio(audioUrl);
+            audio.play();
+        }
+
+        // --- AUDIO HELPERS ---
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcm16, sampleRate) {
+            const buffer = new ArrayBuffer(44 + pcm16.length * 2);
+            const view = new DataView(buffer);
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+            };
+            writeString(0, 'RIFF');
+            view.setUint32(4, 32 + pcm16.length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, pcm16.length * 2, true);
+            for (let i = 0; i < pcm16.length; i++) view.setInt16(44 + i * 2, pcm16[i], true);
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        async function generateQuestionImage(prompt) {
+            const imgElement = document.getElementById('question-image');
+            const loader = document.getElementById('image-loader');
+            imgElement.classList.add('hidden');
+            loader.classList.remove('hidden');
+
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+                const data = await fetchWithRetry(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ instances: [{ prompt: prompt }], parameters: { sampleCount: 1 } })
+                });
+                if (data.predictions?.[0]?.bytesBase64Encoded) {
+                    imgElement.src = `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+                    imgElement.classList.remove('hidden');
+                    loader.classList.add('hidden');
+                }
+            } catch (e) {
+                loader.innerHTML = `<div class="text-4xl">🎨</div><p class="text-[8px] text-slate-300">IMAGE LOAD FAILED</p>`;
+            }
+        }
+
+        // --- GAME LOGIC ---
+
+        async function loadQuestion() {
+            if (currentQuestionIndex >= questions.length) {
+                endGame();
+                return;
+            }
+
+            const q = questions[currentQuestionIndex];
+            document.getElementById('question-count').innerText = `Question ${currentQuestionIndex + 1} / ${questions.length}`;
+            document.getElementById('question-text').innerText = q.q;
+            document.getElementById('text-left').innerText = q.a;
+            document.getElementById('text-right').innerText = q.b;
+            
+            // Trigger AI assets
+            generateQuestionImage(q.prompt);
+            speakQuestion(q.q);
+
+            // UI Reset
+            ['option-left', 'option-right'].forEach(id => {
+                document.getElementById(id).className = "group flex flex-col justify-center p-10 rounded-[2.5rem] border-4 border-slate-100 text-center transition-all bg-white shadow-lg relative";
+            });
+            document.getElementById('feedback-area').innerText = "";
+            gameState = 'PLAYING';
+        }
+
+        async function handleSelection(side) {
+            if (gameState !== 'PLAYING') return;
+            gameState = 'FEEDBACK';
+            
+            const q = questions[currentQuestionIndex];
+            const isCorrect = (side === 'left' && q.correct === 'a') || (side === 'right' && q.correct === 'b');
+            const feedback = document.getElementById('feedback-area');
+            const box = document.getElementById(`option-${side}`);
+
+            if (isCorrect) {
+                score++;
+                document.getElementById('score-display').innerText = `Score: ${score}`;
+                feedback.innerHTML = "<span class='text-green-500'>Correct! ✨</span>";
+                box.classList.add('border-green-500', 'bg-green-50', 'scale-105');
+                synth.triggerAttackRelease(["C4", "E4", "G4"], "8n");
+                
+                setTimeout(() => {
+                    currentQuestionIndex++;
+                    loadQuestion();
+                }, 2000);
+            } else {
+                feedback.innerHTML = "<span class='text-red-500'>Incorrect ❌</span>";
+                box.classList.add('border-red-500', 'bg-red-50');
+                synth.triggerAttackRelease(["F3"], "4n");
+                
+                // Show AI Explanation
+                const userText = side === 'left' ? q.a : q.b;
+                const correctText = q.correct === 'a' ? q.a : q.b;
+                const explanation = await getAIExplanation(q.q, userText, correctText);
+                
+                showAIExplanation(explanation);
+                
+                setTimeout(() => {
+                    hideAIExplanation();
+                    currentQuestionIndex++;
+                    loadQuestion();
+                }, 6000);
+            }
+        }
+
+        function showAIExplanation(text) {
+            const toast = document.getElementById('ai-feedback-toast');
+            document.getElementById('ai-feedback-text').innerText = text;
+            toast.classList.add('show');
+        }
+
+        function hideAIExplanation() {
+            document.getElementById('ai-feedback-toast').classList.remove('show');
+        }
+
+        function endGame() {
+            gameState = 'END';
+            document.getElementById('game-container').classList.add('hidden');
+            document.getElementById('results-screen').classList.remove('hidden');
+            document.getElementById('final-score').innerText = `${score} / ${questions.length}`;
+        }
+
+        // --- CAMERA & TRACKING ---
+
+        async function initializeFaceLandmarker() {
+            const filesetResolver = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+            faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+                    delegate: "GPU"
+                },
+                outputFaceBlendshapes: true,
+                runningMode: "VIDEO",
+                numFaces: 1
+            });
+        }
+
+        async function startCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+            video.srcObject = stream;
+            video.onloadeddata = () => predictWebcam();
+        }
+
+        async function predictWebcam() {
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+
+            if (lastVideoTime !== video.currentTime) {
+                lastVideoTime = video.currentTime;
+                const results = faceLandmarker.detectForVideo(video, performance.now());
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+                if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+                    const landmarks = results.faceLandmarks[0];
+                    const leftEye = landmarks[33];
+                    const rightEye = landmarks[263];
+                    const angle = (Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * (180 / Math.PI)) * -1;
+                    currentTilt = Math.abs(angle) < 2 ? 0 : angle;
+                    processInput(currentTilt);
+                } else {
+                    processInput(0);
+                }
+            }
+            requestAnimationFrame(predictWebcam);
+        }
+
+        function processInput(tilt) {
+            const bar = document.getElementById('tilt-bar');
+            const confirmBar = document.getElementById('confirm-progress-bar');
+            const barWidth = Math.min(Math.abs(tilt) * 2.5, 50);
+            
+            bar.style.width = `${barWidth}%`;
+            if (tilt < 0) {
+                bar.style.left = `${50 - barWidth}%`;
+                bar.className = "tilt-meter absolute h-full bg-blue-500 origin-right";
+            } else {
+                bar.style.left = "50%";
+                bar.className = "tilt-meter absolute h-full bg-indigo-500 origin-left";
+            }
+
+            if (gameState === 'PLAYING') {
+                let decision = null;
+                if (tilt < -tiltThreshold) decision = 'left';
+                else if (tilt > tiltThreshold) decision = 'right';
+
+                if (decision && decision === currentDecision) {
+                    const elapsed = Date.now() - currentHoldStartTime;
+                    const progress = Math.min((elapsed / holdTimeThreshold) * 100, 100);
+                    confirmBar.style.width = `${progress}%`;
+                    if (elapsed >= holdTimeThreshold) {
+                        handleSelection(decision);
+                        currentDecision = null;
+                        currentHoldStartTime = null;
+                        confirmBar.style.width = `0%`;
+                    }
+                } else if (decision) {
+                    currentDecision = decision;
+                    currentHoldStartTime = Date.now();
+                } else {
+                    currentDecision = null;
+                    currentHoldStartTime = null;
+                    confirmBar.style.width = `0%`;
+                }
+            }
+        }
+
+        // --- BUTTON HANDLERS ---
+        document.getElementById('btn-start').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-start');
+            const status = document.getElementById('loading-status');
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            status.classList.remove('hidden');
+
+            try {
+                // Initialize AI first
+                questions = await generateCurriculum();
+                await initializeFaceLandmarker();
+                await startCamera();
+                await Tone.start();
+                
+                document.getElementById('start-screen').classList.add('hidden');
+                document.getElementById('game-container').classList.remove('hidden');
+                loadQuestion();
+            } catch (err) {
+                console.error(err);
+                btn.innerText = "Error - Try Again";
+                btn.disabled = false;
+                status.innerText = "AI CONNECTION FAILED";
+            }
+        });
+
+        document.getElementById('btn-replay-audio').addEventListener('click', () => {
+            if (questions[currentQuestionIndex]) {
+                speakQuestion(questions[currentQuestionIndex].q);
+            }
+        });
+
+    </script>
+</body>
+</html>
