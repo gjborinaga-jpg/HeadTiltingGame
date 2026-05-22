@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Head Tilt Grammar Quest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; background-color: #f0f4f8; }
+        .tilt-indicator { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .option-card { transition: transform 0.2s, background-color 0.2s, border-color 0.2s; }
+        .option-selected { transform: scale(1.1); border-color: #3b82f6; background-color: #eff6ff; }
+        #video-container { transform: scaleX(-1); } /* Mirror the video */
+        .progress-bar { transition: width 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+
+    <div id="game-container" class="relative flex-1 flex flex-col items-center justify-center p-4">
+        
+        <!-- Camera Overlay -->
+        <div id="camera-preview" class="fixed top-4 right-4 w-40 h-30 bg-black rounded-xl overflow-hidden shadow-lg border-4 border-white z-50">
+            <video id="input_video" class="hidden"></video>
+            <canvas id="output_canvas" class="w-full h-full object-cover"></canvas>
+            <div id="tilt-label" class="absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-black/50 py-0.5">Detecting...</div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="z-10 bg-white p-10 rounded-3xl shadow-2xl text-center max-w-lg">
+            <h1 class="text-4xl font-extrabold text-indigo-600 mb-4">WH-Grammar Quest</h1>
+            <p class="text-gray-600 mb-8">Answer questions by tilting your head <span class="font-bold text-blue-500">Left</span> or <span class="font-bold text-blue-500">Right</span>!</p>
+            <div class="flex justify-center space-x-4 mb-8">
+                <div class="animate-bounce">⬅️ Tilt</div>
+                <div class="animate-bounce" style="animation-delay: 0.1s">👤 Center</div>
+                <div class="animate-bounce" style="animation-delay: 0.2s">Tilt ➡️</div>
+            </div>
+            <button id="start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 rounded-full text-xl transition-all shadow-lg active:scale-95">
+                Grant Camera & Play
+            </button>
+        </div>
+
+        <!-- Main Gameplay -->
+        <div id="quiz-area" class="hidden w-full max-w-4xl flex flex-col items-center">
+            <!-- Progress -->
+            <div class="w-full mb-8">
+                <div class="flex justify-between text-sm font-bold text-gray-500 mb-2">
+                    <span id="progress-text">Question 1/10</span>
+                    <span id="score-text">Score: 0</span>
+                </div>
+                <div class="h-4 w-full bg-gray-200 rounded-full overflow-hidden">
+                    <div id="progress-fill" class="progress-bar h-full bg-indigo-500 w-0"></div>
+                </div>
+            </div>
+
+            <!-- Question Card -->
+            <div class="bg-white w-full p-8 rounded-3xl shadow-xl mb-12 text-center">
+                <h2 id="question-text" class="text-3xl font-bold text-gray-800 leading-tight">Loading question...</h2>
+            </div>
+
+            <!-- Options Grid -->
+            <div class="grid grid-cols-2 gap-8 w-full">
+                <div id="option-left" class="option-card bg-white border-4 border-gray-100 p-8 rounded-2xl shadow-md text-center">
+                    <div class="text-indigo-500 font-extrabold text-sm uppercase mb-2">Tilt Left</div>
+                    <div id="text-left" class="text-2xl font-bold text-gray-700">Option A</div>
+                </div>
+                <div id="option-right" class="option-card bg-white border-4 border-gray-100 p-8 rounded-2xl shadow-md text-center">
+                    <div class="text-indigo-500 font-extrabold text-sm uppercase mb-2">Tilt Right</div>
+                    <div id="text-right" class="text-2xl font-bold text-gray-700">Option B</div>
+                </div>
+            </div>
+
+            <!-- Status Indicator -->
+            <div id="tilt-status" class="mt-12 text-xl font-bold text-gray-400 italic">
+                Hold your tilt to select!
+            </div>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="hidden z-10 bg-white p-12 rounded-3xl shadow-2xl text-center max-w-lg">
+            <h2 class="text-5xl font-extrabold text-indigo-600 mb-2">Finish!</h2>
+            <p class="text-2xl text-gray-600 mb-8">Your Grammar Score:</p>
+            <div id="final-score" class="text-8xl font-black text-indigo-500 mb-8">0/10</div>
+            <button onclick="location.reload()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 rounded-full text-xl">
+                Try Again
+            </button>
+        </div>
+    </div>
+
+    <!-- Feedback Toasts -->
+    <div id="feedback-msg" class="fixed bottom-10 left-1/2 -translate-x-1/2 px-10 py-4 rounded-full text-white font-bold text-2xl shadow-2xl transition-all opacity-0 pointer-events-none">
+        Correct!
+    </div>
+
+    <script>
+        const questions = [
+            { q: "___ is your favorite teacher?", a: "Who", b: "Where", correct: "a" },
+            { q: "___ do you live?", a: "When", b: "Where", correct: "b" },
+            { q: "___ is the time?", a: "What", b: "Why", correct: "a" },
+            { q: "___ are you crying?", a: "Why", b: "How", correct: "a" },
+            { q: "___ do you get to school?", a: "How", b: "Who", correct: "a" },
+            { q: "___ is your birthday?", a: "What", b: "When", correct: "b" },
+            { q: "___ color do you want?", a: "Which", b: "Whose", correct: "a" },
+            { q: "___ book is this on the floor?", a: "Whose", b: "Who", correct: "a" },
+            { q: "___ are you doing right now?", a: "Where", b: "What", correct: "b" },
+            { q: "___ is the nearest bus stop?", a: "Where", b: "When", correct: "a" }
+        ];
+
+        let currentQuestion = 0;
+        let score = 0;
+        let gameState = 'START'; // START, PLAYING, FEEDBACK, END
+        let selectionTimer = 0;
+        let lastTilt = 'NONE'; // LEFT, RIGHT, NONE
+        const HOLD_THRESHOLD = 15; // Number of frames to hold tilt
+
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const tiltLabel = document.getElementById('tilt-label');
+
+        const faceMesh = new FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+        });
+
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults(onResults);
+
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                // Get Eye center points to calculate tilt
+                const leftEye = landmarks[33];   // Left eye inner
+                const rightEye = landmarks[263]; // Right eye inner
+                
+                // Calculate angle
+                const dy = rightEye.y - leftEye.y;
+                const dx = rightEye.x - leftEye.x;
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+                // Neutral range is around 0. Left tilt is negative, Right is positive
+                // Adjustment: because video is mirrored, we adjust thresholds
+                let currentTilt = 'NONE';
+                if (angle > 12) {
+                    currentTilt = 'LEFT';
+                    tiltLabel.innerText = "TILTING LEFT ⬅️";
+                    tiltLabel.className = "absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-blue-600 py-0.5";
+                } else if (angle < -12) {
+                    currentTilt = 'RIGHT';
+                    tiltLabel.innerText = "TILTING RIGHT ➡️";
+                    tiltLabel.className = "absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-blue-600 py-0.5";
+                } else {
+                    currentTilt = 'NONE';
+                    tiltLabel.innerText = "CENTERED 👤";
+                    tiltLabel.className = "absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-black/50 py-0.5";
+                }
+
+                handleGameTilt(currentTilt);
+            }
+            canvasCtx.restore();
+        }
+
+        function handleGameTilt(tilt) {
+            if (gameState !== 'PLAYING') return;
+
+            const optLeft = document.getElementById('option-left');
+            const optRight = document.getElementById('option-right');
+            const statusText = document.getElementById('tilt-status');
+
+            if (tilt === 'LEFT') {
+                optLeft.classList.add('option-selected');
+                optRight.classList.remove('option-selected');
+                statusText.innerText = "Selecting Left...";
+                statusText.className = "mt-12 text-xl font-bold text-blue-500 animate-pulse";
+            } else if (tilt === 'RIGHT') {
+                optRight.classList.add('option-selected');
+                optLeft.classList.remove('option-selected');
+                statusText.innerText = "Selecting Right...";
+                statusText.className = "mt-12 text-xl font-bold text-blue-500 animate-pulse";
+            } else {
+                optLeft.classList.remove('option-selected');
+                optRight.classList.remove('option-selected');
+                statusText.innerText = "Tilt your head to answer!";
+                statusText.className = "mt-12 text-xl font-bold text-gray-400 italic";
+            }
+
+            // Selection Timer Logic
+            if (tilt !== 'NONE' && tilt === lastTilt) {
+                selectionTimer++;
+                if (selectionTimer > HOLD_THRESHOLD) {
+                    submitAnswer(tilt === 'LEFT' ? 'a' : 'b');
+                    selectionTimer = 0;
+                }
+            } else {
+                selectionTimer = 0;
+            }
+            lastTilt = tilt;
+        }
+
+        function submitAnswer(choice) {
+            gameState = 'FEEDBACK';
+            const question = questions[currentQuestion];
+            const isCorrect = choice === question.correct;
+            
+            if (isCorrect) score++;
+
+            // Show feedback UI
+            const feedback = document.getElementById('feedback-msg');
+            feedback.innerText = isCorrect ? "✅ Correct!" : "❌ Oops!";
+            feedback.style.backgroundColor = isCorrect ? "#10b981" : "#ef4444";
+            feedback.classList.remove('opacity-0');
+            feedback.classList.add('opacity-100', '-translate-y-4');
+
+            setTimeout(() => {
+                feedback.classList.add('opacity-0');
+                feedback.classList.remove('opacity-100', '-translate-y-4');
+                nextQuestion();
+            }, 1500);
+        }
+
+        function nextQuestion() {
+            currentQuestion++;
+            if (currentQuestion >= questions.length) {
+                endGame();
+            } else {
+                renderQuestion();
+                gameState = 'PLAYING';
+            }
+        }
+
+        function renderQuestion() {
+            const q = questions[currentQuestion];
+            document.getElementById('question-text').innerText = q.q;
+            document.getElementById('text-left').innerText = q.a;
+            document.getElementById('text-right').innerText = q.b;
+            
+            document.getElementById('progress-text').innerText = `Question ${currentQuestion + 1}/${questions.length}`;
+            document.getElementById('score-text').innerText = `Score: ${score}`;
+            document.getElementById('progress-fill').style.width = `${((currentQuestion) / questions.length) * 100}%`;
+        }
+
+        function startGame() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('quiz-area').classList.remove('hidden');
+            gameState = 'PLAYING';
+            renderQuestion();
+        }
+
+        function endGame() {
+            gameState = 'END';
+            document.getElementById('quiz-area').classList.add('hidden');
+            document.getElementById('result-screen').classList.remove('hidden');
+            document.getElementById('final-score').innerText = `${score}/${questions.length}`;
+            
+            // Visual confetti-like celebration if score is high
+            if (score > 7) {
+                document.getElementById('final-score').classList.add('animate-bounce');
+            }
+        }
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await faceMesh.send({image: videoElement});
+            },
+            width: 640,
+            height: 480
+        });
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            camera.start().then(() => {
+                startGame();
+            }).catch(err => {
+                alert("Please enable camera access to play this game!");
+            });
+        });
+
+    </script>
+</body>
+</html>
