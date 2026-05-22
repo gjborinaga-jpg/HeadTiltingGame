@@ -3,94 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Head Tilt Grammar Quest</title>
+    <title>WH-Grammar Quest - Motion Sensors</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; overflow: hidden; background-color: #f0f4f8; }
+        body { font-family: 'Inter', sans-serif; }
         .tilt-indicator { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        .option-card { transition: transform 0.2s, background-color 0.2s, border-color 0.2s; }
-        .option-selected { transform: scale(1.1); border-color: #3b82f6; background-color: #eff6ff; }
-        #video-container { transform: scaleX(-1); } /* Mirror the video */
+        .option-card { transition: transform 0.2s, background-color 0.2s, border-color 0.2s; cursor: pointer; }
+        .option-selected { transform: scale(1.05); border-color: #3b82f6; background-color: #eff6ff; box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
         .progress-bar { transition: width 0.5s ease-in-out; }
+        .status-badge { 
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .status-centered { background-color: #f3f4f6; color: #374151; }
+        .status-left { background-color: #dbeafe; color: #1e40af; animation: pulse 1s infinite; }
+        .status-right { background-color: #fecaca; color: #991b1b; animation: pulse 1s infinite; }
     </style>
 </head>
-<body class="flex flex-col h-screen">
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex flex-col">
 
     <div id="game-container" class="relative flex-1 flex flex-col items-center justify-center p-4">
         
-        <!-- Camera Overlay -->
-        <div id="camera-preview" class="fixed top-4 right-4 w-40 h-30 bg-black rounded-xl overflow-hidden shadow-lg border-4 border-white z-50">
-            <video id="input_video" class="hidden"></video>
-            <canvas id="output_canvas" class="w-full h-full object-cover"></canvas>
-            <div id="tilt-label" class="absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-black/50 py-0.5">Detecting...</div>
+        <!-- Tilt Indicator -->
+        <div class="fixed top-4 left-4 z-50">
+            <div class="text-center">
+                <div id="tilt-status" class="status-badge status-centered mb-2">📱 Center</div>
+                <div class="text-xs text-gray-600 font-semibold">Gamma: <span id="gamma-value">0°</span></div>
+            </div>
         </div>
 
         <!-- Start Screen -->
         <div id="start-screen" class="z-10 bg-white p-10 rounded-3xl shadow-2xl text-center max-w-lg">
-            <h1 class="text-4xl font-extrabold text-indigo-600 mb-4">WH-Grammar Quest</h1>
-            <p class="text-gray-600 mb-8">Answer questions by tilting your head <span class="font-bold text-blue-500">Left</span> or <span class="font-bold text-blue-500">Right</span>!</p>
-            <div class="flex justify-center space-x-4 mb-8">
-                <div class="animate-bounce">⬅️ Tilt</div>
-                <div class="animate-bounce" style="animation-delay: 0.1s">👤 Center</div>
-                <div class="animate-bounce" style="animation-delay: 0.2s">Tilt ➡️</div>
+            <h1 class="text-5xl font-extrabold text-indigo-600 mb-4">🎯 WH-Grammar Quest</h1>
+            <p class="text-gray-700 text-lg mb-6">Master WH-Questions by Tilting Your Device!</p>
+            
+            <div class="bg-indigo-50 rounded-2xl p-6 mb-8 border-2 border-indigo-200">
+                <p class="text-gray-700 mb-4">How to Play:</p>
+                <div class="space-y-3 text-left">
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">⬅️</span>
+                        <span class="text-gray-600">Tilt <strong>LEFT</strong> to choose left answer</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">➡️</span>
+                        <span class="text-gray-600">Tilt <strong>RIGHT</strong> to choose right answer</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">⏱️</span>
+                        <span class="text-gray-600"><strong>Hold</strong> for 1 second to confirm</span>
+                    </div>
+                </div>
             </div>
-            <button id="start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 rounded-full text-xl transition-all shadow-lg active:scale-95">
-                Grant Camera & Play
+
+            <button id="start-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 rounded-full text-xl transition-all shadow-lg active:scale-95 w-full">
+                📱 Start Game
             </button>
+            
+            <p class="text-xs text-gray-500 mt-4">Works best on mobile devices with motion sensors</p>
         </div>
 
         <!-- Main Gameplay -->
-        <div id="quiz-area" class="hidden w-full max-w-4xl flex flex-col items-center">
+        <div id="quiz-area" class="hidden w-full max-w-3xl flex flex-col items-center">
             <!-- Progress -->
             <div class="w-full mb-8">
-                <div class="flex justify-between text-sm font-bold text-gray-500 mb-2">
+                <div class="flex justify-between text-sm font-bold text-gray-600 mb-3">
                     <span id="progress-text">Question 1/10</span>
                     <span id="score-text">Score: 0</span>
                 </div>
-                <div class="h-4 w-full bg-gray-200 rounded-full overflow-hidden">
+                <div class="h-4 w-full bg-gray-300 rounded-full overflow-hidden">
                     <div id="progress-fill" class="progress-bar h-full bg-indigo-500 w-0"></div>
                 </div>
             </div>
 
             <!-- Question Card -->
-            <div class="bg-white w-full p-8 rounded-3xl shadow-xl mb-12 text-center">
-                <h2 id="question-text" class="text-3xl font-bold text-gray-800 leading-tight">Loading question...</h2>
+            <div class="bg-white w-full p-8 rounded-2xl shadow-lg mb-12 text-center border-4 border-indigo-200">
+                <h2 id="question-text" class="text-4xl font-bold text-gray-800 leading-tight">Loading question...</h2>
             </div>
 
             <!-- Options Grid -->
-            <div class="grid grid-cols-2 gap-8 w-full">
-                <div id="option-left" class="option-card bg-white border-4 border-gray-100 p-8 rounded-2xl shadow-md text-center">
-                    <div class="text-indigo-500 font-extrabold text-sm uppercase mb-2">Tilt Left</div>
+            <div class="grid grid-cols-2 gap-6 w-full mb-8">
+                <div id="option-left" class="option-card bg-white border-4 border-gray-200 p-8 rounded-2xl shadow-md text-center hover:shadow-lg">
+                    <div class="text-blue-600 font-extrabold text-sm uppercase mb-3 tracking-wide">⬅️ Tilt Left</div>
                     <div id="text-left" class="text-2xl font-bold text-gray-700">Option A</div>
                 </div>
-                <div id="option-right" class="option-card bg-white border-4 border-gray-100 p-8 rounded-2xl shadow-md text-center">
-                    <div class="text-indigo-500 font-extrabold text-sm uppercase mb-2">Tilt Right</div>
+                <div id="option-right" class="option-card bg-white border-4 border-gray-200 p-8 rounded-2xl shadow-md text-center hover:shadow-lg">
+                    <div class="text-red-600 font-extrabold text-sm uppercase mb-3 tracking-wide">Tilt Right ➡️</div>
                     <div id="text-right" class="text-2xl font-bold text-gray-700">Option B</div>
                 </div>
             </div>
 
             <!-- Status Indicator -->
-            <div id="tilt-status" class="mt-12 text-xl font-bold text-gray-400 italic">
-                Hold your tilt to select!
+            <div id="tilt-status-main" class="status-badge status-centered text-lg">
+                📱 Center - Tilt your device to answer!
+            </div>
+
+            <!-- Confirmation Progress -->
+            <div class="mt-8 w-full max-w-md">
+                <div id="confirm-bar-container" class="h-2 w-full bg-gray-300 rounded-full overflow-hidden hidden">
+                    <div id="confirm-bar" class="h-full bg-green-500 w-0" style="transition: width 0.1s linear;"></div>
+                </div>
             </div>
         </div>
 
         <!-- Result Screen -->
         <div id="result-screen" class="hidden z-10 bg-white p-12 rounded-3xl shadow-2xl text-center max-w-lg">
-            <h2 class="text-5xl font-extrabold text-indigo-600 mb-2">Finish!</h2>
-            <p class="text-2xl text-gray-600 mb-8">Your Grammar Score:</p>
+            <h2 class="text-5xl font-extrabold text-indigo-600 mb-4">🏆 Finish!</h2>
+            <p class="text-2xl text-gray-600 mb-4">Your Grammar Score:</p>
             <div id="final-score" class="text-8xl font-black text-indigo-500 mb-8">0/10</div>
-            <button onclick="location.reload()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 rounded-full text-xl">
-                Try Again
+            
+            <div id="score-feedback" class="text-lg text-gray-700 mb-8"></div>
+            
+            <button onclick="location.reload()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 rounded-full text-xl w-full transition-all">
+                🔄 Try Again
             </button>
         </div>
     </div>
 
-    <!-- Feedback Toasts -->
-    <div id="feedback-msg" class="fixed bottom-10 left-1/2 -translate-x-1/2 px-10 py-4 rounded-full text-white font-bold text-2xl shadow-2xl transition-all opacity-0 pointer-events-none">
+    <!-- Feedback Toast -->
+    <div id="feedback-msg" class="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 rounded-full text-white font-bold text-2xl shadow-2xl transition-all opacity-0 pointer-events-none z-40">
         Correct!
     </div>
 
@@ -113,98 +148,102 @@
         let gameState = 'START'; // START, PLAYING, FEEDBACK, END
         let selectionTimer = 0;
         let lastTilt = 'NONE'; // LEFT, RIGHT, NONE
-        const HOLD_THRESHOLD = 15; // Number of frames to hold tilt
+        const HOLD_THRESHOLD = 20; // Frames to hold for confirmation (~0.6 seconds at 30fps)
+        const TILT_THRESHOLD = 20; // Degrees of tilt to trigger selection
 
-        const videoElement = document.getElementById('input_video');
-        const canvasElement = document.getElementById('output_canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        const tiltLabel = document.getElementById('tilt-label');
+        // Get DOM elements
+        const statusBadge = document.getElementById('tilt-status');
+        const statusMain = document.getElementById('tilt-status-main');
+        const gammaValue = document.getElementById('gamma-value');
+        const optLeft = document.getElementById('option-left');
+        const optRight = document.getElementById('option-right');
+        const confirmBar = document.getElementById('confirm-bar');
+        const confirmBarContainer = document.getElementById('confirm-bar-container');
 
-        const faceMesh = new FaceMesh({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-        });
-
-        faceMesh.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        faceMesh.onResults(onResults);
-
-        function onResults(results) {
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                const landmarks = results.multiFaceLandmarks[0];
-                
-                // Get Eye center points to calculate tilt
-                const leftEye = landmarks[33];   // Left eye inner
-                const rightEye = landmarks[263]; // Right eye inner
-                
-                // Calculate angle
-                const dy = rightEye.y - leftEye.y;
-                const dx = rightEye.x - leftEye.x;
-                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-                // Neutral range is around 0. Left tilt is negative, Right is positive
-                // Adjustment: because video is mirrored, we adjust thresholds
-                let currentTilt = 'NONE';
-                if (angle > 12) {
-                    currentTilt = 'LEFT';
-                    tiltLabel.innerText = "TILTING LEFT ⬅️";
-                    tiltLabel.className = "absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-blue-600 py-0.5";
-                } else if (angle < -12) {
-                    currentTilt = 'RIGHT';
-                    tiltLabel.innerText = "TILTING RIGHT ➡️";
-                    tiltLabel.className = "absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-blue-600 py-0.5";
-                } else {
-                    currentTilt = 'NONE';
-                    tiltLabel.innerText = "CENTERED 👤";
-                    tiltLabel.className = "absolute bottom-1 left-0 right-0 text-center text-[10px] font-bold text-white bg-black/50 py-0.5";
-                }
-
-                handleGameTilt(currentTilt);
+        // Request motion permission for iOS 13+
+        function requestMotionPermission() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleDeviceOrientation);
+                        } else {
+                            alert('⚠️ Motion permission denied. Please enable it in settings.');
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Non-iOS devices
+                window.addEventListener('deviceorientation', handleDeviceOrientation);
             }
-            canvasCtx.restore();
+        }
+
+        function handleDeviceOrientation(event) {
+            const gamma = Math.round(event.gamma); // Left-right tilt
+            gammaValue.innerText = gamma + '°';
+
+            if (gameState !== 'PLAYING') return;
+
+            let currentTilt = 'NONE';
+            if (gamma < -TILT_THRESHOLD) {
+                currentTilt = 'LEFT';
+            } else if (gamma > TILT_THRESHOLD) {
+                currentTilt = 'RIGHT';
+            }
+
+            updateTiltUI(currentTilt);
+            handleGameTilt(currentTilt);
+        }
+
+        function updateTiltUI(tilt) {
+            if (tilt === 'LEFT') {
+                statusBadge.innerText = '⬅️ Tilting LEFT';
+                statusBadge.className = 'status-badge status-left';
+                statusMain.innerText = '⬅️ Tilting LEFT - Hold to select';
+                statusMain.className = 'status-badge status-left text-lg';
+            } else if (tilt === 'RIGHT') {
+                statusBadge.innerText = '➡️ Tilting RIGHT';
+                statusBadge.className = 'status-badge status-right';
+                statusMain.innerText = '➡️ Tilting RIGHT - Hold to select';
+                statusMain.className = 'status-badge status-right text-lg';
+            } else {
+                statusBadge.innerText = '📱 Center';
+                statusBadge.className = 'status-badge status-centered';
+                statusMain.innerText = '📱 Center - Tilt your device to answer!';
+                statusMain.className = 'status-badge status-centered text-lg';
+            }
         }
 
         function handleGameTilt(tilt) {
-            if (gameState !== 'PLAYING') return;
-
-            const optLeft = document.getElementById('option-left');
-            const optRight = document.getElementById('option-right');
-            const statusText = document.getElementById('tilt-status');
-
             if (tilt === 'LEFT') {
                 optLeft.classList.add('option-selected');
                 optRight.classList.remove('option-selected');
-                statusText.innerText = "Selecting Left...";
-                statusText.className = "mt-12 text-xl font-bold text-blue-500 animate-pulse";
             } else if (tilt === 'RIGHT') {
                 optRight.classList.add('option-selected');
                 optLeft.classList.remove('option-selected');
-                statusText.innerText = "Selecting Right...";
-                statusText.className = "mt-12 text-xl font-bold text-blue-500 animate-pulse";
             } else {
                 optLeft.classList.remove('option-selected');
                 optRight.classList.remove('option-selected');
-                statusText.innerText = "Tilt your head to answer!";
-                statusText.className = "mt-12 text-xl font-bold text-gray-400 italic";
+                selectionTimer = 0;
+                confirmBar.style.width = '0%';
+                confirmBarContainer.classList.add('hidden');
             }
 
-            // Selection Timer Logic
+            // Confirmation timer
             if (tilt !== 'NONE' && tilt === lastTilt) {
                 selectionTimer++;
+                confirmBarContainer.classList.remove('hidden');
+                confirmBar.style.width = (selectionTimer / HOLD_THRESHOLD) * 100 + '%';
+                
                 if (selectionTimer > HOLD_THRESHOLD) {
                     submitAnswer(tilt === 'LEFT' ? 'a' : 'b');
                     selectionTimer = 0;
+                    confirmBar.style.width = '0%';
                 }
             } else {
                 selectionTimer = 0;
+                confirmBar.style.width = '0%';
+                confirmBarContainer.classList.add('hidden');
             }
             lastTilt = tilt;
         }
@@ -216,7 +255,7 @@
             
             if (isCorrect) score++;
 
-            // Show feedback UI
+            // Show feedback
             const feedback = document.getElementById('feedback-msg');
             feedback.innerText = isCorrect ? "✅ Correct!" : "❌ Oops!";
             feedback.style.backgroundColor = isCorrect ? "#10b981" : "#ef4444";
@@ -237,6 +276,7 @@
             } else {
                 renderQuestion();
                 gameState = 'PLAYING';
+                updateTiltUI('NONE');
             }
         }
 
@@ -248,7 +288,7 @@
             
             document.getElementById('progress-text').innerText = `Question ${currentQuestion + 1}/${questions.length}`;
             document.getElementById('score-text').innerText = `Score: ${score}`;
-            document.getElementById('progress-fill').style.width = `${((currentQuestion) / questions.length) * 100}%`;
+            document.getElementById('progress-fill').style.width = `${(currentQuestion / questions.length) * 100}%`;
         }
 
         function startGame() {
@@ -256,6 +296,7 @@
             document.getElementById('quiz-area').classList.remove('hidden');
             gameState = 'PLAYING';
             renderQuestion();
+            requestMotionPermission();
         }
 
         function endGame() {
@@ -264,28 +305,26 @@
             document.getElementById('result-screen').classList.remove('hidden');
             document.getElementById('final-score').innerText = `${score}/${questions.length}`;
             
-            // Visual confetti-like celebration if score is high
+            const feedbackEl = document.getElementById('score-feedback');
+            if (score === 10) {
+                feedbackEl.innerText = '🌟 Perfect! Outstanding grammar skills!';
+            } else if (score >= 8) {
+                feedbackEl.innerText = '🎉 Excellent! Great job!';
+            } else if (score >= 6) {
+                feedbackEl.innerText = '👍 Good effort! Keep practicing!';
+            } else if (score >= 4) {
+                feedbackEl.innerText = '📚 Nice try! Review and try again!';
+            } else {
+                feedbackEl.innerText = '💪 Keep learning! You\'ll improve!';
+            }
+            
             if (score > 7) {
                 document.getElementById('final-score').classList.add('animate-bounce');
             }
         }
 
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await faceMesh.send({image: videoElement});
-            },
-            width: 640,
-            height: 480
-        });
-
-        document.getElementById('start-btn').addEventListener('click', () => {
-            camera.start().then(() => {
-                startGame();
-            }).catch(err => {
-                alert("Please enable camera access to play this game!");
-            });
-        });
-
+        // Start button
+        document.getElementById('start-btn').addEventListener('click', startGame);
     </script>
 </body>
 </html>
